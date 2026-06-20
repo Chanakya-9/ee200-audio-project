@@ -201,8 +201,8 @@ with tab3:
         
         if st.button("Process Batch Run"):
             
-            if len(uploaded_files) > 10:
-                st.error("⚠️ **Server Memory Protection Active:** You have uploaded more than 10 files. To prevent the free cloud container from running out of RAM, please remove some files and ensure you process a maximum of 10 files at a time.")
+            if len(uploaded_files) > 30:
+                st.error("⚠️ **Server Memory Protection Active:** You have uploaded more than 30 files. To prevent the free cloud container from running out of RAM, please remove some files and ensure you process a maximum of 10 files at a time.")
             else:
                 
                 import gc
