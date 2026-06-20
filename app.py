@@ -11,6 +11,8 @@ from collections import defaultdict
 from scipy.ndimage import maximum_filter
 import back
 
+
+
 st.set_page_config(page_title="EE200 Project", layout="wide")
 
 st.title("EE200: Audio Fingerprinting Project")
@@ -195,33 +197,48 @@ with tab3:
     uploaded_files = st.file_uploader("Upload multiple audio query clips at once", type=["mp3", "wav"], accept_multiple_files=True)
     
     if st.button("Process Batch Run") and uploaded_files:
+        # Import cleanup tools directly inside the trigger block
+        import gc
+        import matplotlib.pyplot as plt
+        
         batch_output = []
         for f in uploaded_files:
-            p = save_temp_file(f)
-            q_hashes, _, _, _ = back.extract_features(p)
-            
-            b_votes = defaultdict(lambda: defaultdict(int))
-            for q in q_hashes:
-                matches = back.index.get((q[0], q[1], q[2]))
-                if matches:
-                    for song, t_song in matches:
-                        offset = t_song - q[3]
-                        b_votes[song][offset] += 1
-                        
-            predicted = "None"
-            if b_votes:
-                predicted = max(b_votes, key=lambda s: max(b_votes[s].values()))
-                if predicted.lower().endswith(('.mp3', '.wav')):
-                    predicted = predicted[:-4]
+            p = None
+            try:
+                p = save_temp_file(f)
+                q_hashes, _, _, _ = back.extract_features(p)
                 
-            
-            batch_output.append({"filename": f.name, "prediction": predicted})
-            os.remove(p)
-            
+                b_votes = defaultdict(lambda: defaultdict(int))
+                for q in q_hashes:
+                    matches = back.index.get((q[0], q[1], q[2]))
+                    if matches:
+                        for song, t_song in matches:
+                            offset = t_song - q[3]
+                            b_votes[song][offset] += 1
+                            
+                predicted = "None"
+                if b_votes:
+                    predicted = max(b_votes, key=lambda s: max(b_votes[s].values()))
+                    if predicted.lower().endswith(('.mp3', '.wav')):
+                        predicted = predicted[:-4]
+                    
+                batch_output.append({"filename": f.name, "prediction": predicted})
+                
+            except Exception as e:
+                st.error(f"Error handling {f.name}: {e}")
+                batch_output.append({"filename": f.name, "prediction": "Execution Error"})
+                
+            finally:
+                # 1. Clean up temporary hard drive space
+                if p and os.path.exists(p):
+                    os.remove(p)
+                # 2. Force terminate memory leaks & clear server RAM
+                plt.close('all')
+                gc.collect()
+                
         df_results = pd.DataFrame(batch_output)
-        
-        
         df_results.to_csv("results.csv", index=False)
         st.success("✅ Saved batch run out to results.csv successfully!")
         
-        st.dataframe(df_results, use_container_width=True, hide_index=True)
+        # Swapped container width logic to modern parameter to address warning
+        st.dataframe(df_results, width="stretch", hide_index=True)
