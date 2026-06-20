@@ -196,49 +196,68 @@ with tab3:
     st.header("Batch Query Identification")
     uploaded_files = st.file_uploader("Upload multiple audio query clips at once", type=["mp3", "wav"], accept_multiple_files=True)
     
-    if st.button("Process Batch Run") and uploaded_files:
-        # Import cleanup tools directly inside the trigger block
-        import gc
-        import matplotlib.pyplot as plt
+    if uploaded_files:
+        st.info(f"📋 Total clips loaded in queue: {len(uploaded_files)}")
         
-        batch_output = []
-        for f in uploaded_files:
-            p = None
-            try:
-                p = save_temp_file(f)
-                q_hashes, _, _, _ = back.extract_features(p)
-                
-                b_votes = defaultdict(lambda: defaultdict(int))
-                for q in q_hashes:
-                    matches = back.index.get((q[0], q[1], q[2]))
-                    if matches:
-                        for song, t_song in matches:
-                            offset = t_song - q[3]
-                            b_votes[song][offset] += 1
-                            
-                predicted = "None"
-                if b_votes:
-                    predicted = max(b_votes, key=lambda s: max(b_votes[s].values()))
-                    if predicted.lower().endswith(('.mp3', '.wav')):
-                        predicted = predicted[:-4]
+        if st.button("Process Batch Run"):
+            import gc
+            import io
+            
+            
+            status_table = st.empty()
+            batch_output = []
+            
+            
+            progress_bar = st.progress(0)
+            
+            for idx, f in enumerate(uploaded_files):
+                try:
                     
-                batch_output.append({"filename": f.name, "prediction": predicted})
+                    audio_bytes = f.read()
+                    audio_stream = io.BytesIO(audio_bytes)
+                    
+                    
+                    q_hashes, _, _, _ = back.extract_features(audio_stream)
+                    
+                    b_votes = defaultdict(lambda: defaultdict(int))
+                    for q in q_hashes:
+                        matches = back.index.get((q[0], q[1], q[2]))
+                        if matches:
+                            for song, t_song in matches:
+                                offset = t_song - q[3]
+                                b_votes[song][offset] += 1
+                                
+                    predicted = "None"
+                    if b_votes:
+                        predicted = max(b_votes, key=lambda s: max(b_votes[s].values()))
+                        if predicted.lower().endswith(('.mp3', '.wav')):
+                            predicted = predicted[:-4]
+                        
+                    batch_output.append({"Filename": f.name, "Prediction": predicted})
+                    
+                except Exception as e:
+                    batch_output.append({"Filename": f.name, "Prediction": f"Error: {str(e)[:30]}"})
+                    
+                finally:
+                    
+                    del audio_bytes
+                    del audio_stream
+                    gc.collect()
                 
-            except Exception as e:
-                st.error(f"Error handling {f.name}: {e}")
-                batch_output.append({"filename": f.name, "prediction": "Execution Error"})
                 
-            finally:
-                # 1. Clean up temporary hard drive space
-                if p and os.path.exists(p):
-                    os.remove(p)
-                # 2. Force terminate memory leaks & clear server RAM
-                plt.close('all')
-                gc.collect()
-                
-        df_results = pd.DataFrame(batch_output)
-        df_results.to_csv("results.csv", index=False)
-        st.success("✅ Saved batch run out to results.csv successfully!")
-        
-        # Swapped container width logic to modern parameter to address warning
-        st.dataframe(df_results, width="stretch", hide_index=True)
+                progress_bar.progress((idx + 1) / len(uploaded_files))
+                df_current = pd.DataFrame(batch_output)
+                status_table.dataframe(df_current, width="stretch", hide_index=True)
+            
+            
+            csv_data = df_current.to_csv(index=False).encode('utf-8')
+            
+            st.success("✅ Batch run completed successfully!")
+            
+            
+            st.download_button(
+                label="📥 Download Results as CSV",
+                data=csv_data,
+                file_name="batch_identification_results.csv",
+                mime="text/csv"
+            )
