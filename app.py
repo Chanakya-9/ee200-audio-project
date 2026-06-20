@@ -201,7 +201,7 @@ with tab3:
         
         if st.button("Process Batch Run"):
             
-            if len(uploaded_files) > 30:
+            if len(uploaded_files) > 50:
                 st.error("⚠️ **Server Memory Protection Active:** You have uploaded more than 30 files. To prevent the free cloud container from running out of RAM, please remove some files and ensure you process a maximum of 10 files at a time.")
             else:
                 
@@ -232,7 +232,8 @@ with tab3:
                             if predicted.lower().endswith(('.mp3', '.wav')):
                                 predicted = predicted[:-4]
                             
-                        batch_output.append({"Filename": f.name, "Prediction": predicted})
+                        clean_filename = os.path.splitext(f.name)[0]
+                        batch_output.append({"Filename": clean_filename, "Prediction": predicted})
                         
                     except Exception as e:
                         batch_output.append({"Filename": f.name, "Prediction": "Error"})
