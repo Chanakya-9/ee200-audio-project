@@ -194,70 +194,67 @@ with tab2:
 
 with tab3:
     st.header("Batch Query Identification")
-    st.markdown("💡 *To protect server memory limits, upload files one by one. The table below will accumulate all your results dynamically.*")
+    uploaded_files = st.file_uploader("Upload multiple audio query clips at once", type=["mp3", "wav"], accept_multiple_files=True, key="batch_upload")
     
-
-    if "batch_records" not in st.session_state:
-        st.session_state.batch_records = []
-        
-
-    uploaded_file = st.file_uploader("Upload an audio query clip to add to batch", type=["mp3", "wav"], key="sequential_batch_upload")
-    
-    if uploaded_file is not None:
-        
-        already_processed = any(item["Filename"] == uploaded_file.name for item in st.session_state.batch_records)
-        
-        if not already_processed:
-            import gc
-            import os
+    if uploaded_files:
+        # Check if the upload quantity exceeds the 10-file safe limit
+        if len(uploaded_files) > 10:
+            st.error("⚠️ **Server Memory Protection:** Please upload a maximum of 10 files at a time to prevent the free cloud container from running out of RAM.")
+        else:
+            st.info(f"📋 Total clips loaded in queue: {len(uploaded_files)}")
             
-            p = None
-            with st.spinner(f"Processing {uploaded_file.name}..."):
-                try:
-                    p = save_temp_file(uploaded_file)
-                    q_hashes, _, _, _ = back.extract_features(p)
-                    
-                    b_votes = defaultdict(lambda: defaultdict(int))
-                    for q in q_hashes:
-                        matches = back.index.get((q[0], q[1], q[2]))
-                        if matches:
-                            for song, t_song in matches:
-                                offset = t_song - q[3]
-                                b_votes[song][offset] += 1
-                                
-                    predicted = "None"
-                    if b_votes:
-                        predicted = max(b_votes, key=lambda s: max(b_votes[s].values()))
-                        if predicted.lower().endswith(('.mp3', '.wav')):
-                            predicted = predicted[:-4]
+            if st.button("Process Batch Run"):
+                import gc
+                import os
+                
+                status_table = st.empty()
+                batch_output = []
+                progress_bar = st.progress(0)
+                
+                for idx, f in enumerate(uploaded_files):
+                    p = None
+                    try:
+                        # Save the file temporarily to a secure string path
+                        p = save_temp_file(f)
+                        q_hashes, _, _, _ = back.extract_features(p)
+                        
+                        b_votes = defaultdict(lambda: defaultdict(int))
+                        for q in q_hashes:
+                            matches = back.index.get((q[0], q[1], q[2]))
+                            if matches:
+                                for song, t_song in matches:
+                                    offset = t_song - q[3]
+                                    b_votes[song][offset] += 1
+                                    
+                        predicted = "None"
+                        if b_votes:
+                            predicted = max(b_votes, key=lambda s: max(b_votes[s].values()))
+                            if predicted.lower().endswith(('.mp3', '.wav')):
+                                predicted = predicted[:-4]
                             
+                        batch_output.append({"Filename": f.name, "Prediction": predicted})
+                        
+                    except Exception as e:
+                        batch_output.append({"Filename": f.name, "Prediction": "Error"})
+                        
+                    finally:
+                        # Direct disk cleanup per file iteration
+                        if p and os.path.exists(p):
+                            os.remove(p)
+                        gc.collect()
                     
-                    st.session_state.batch_records.append({"Filename": uploaded_file.name, "Prediction": predicted})
-                    st.toast(f"✅ Successfully processed {uploaded_file.name}!")
-                    
-                except Exception as e:
-                    st.error(f"Error handling file: {e}")
-                finally:
-                    if p and os.path.exists(p):
-                        os.remove(p)
-                    gc.collect()
-
-    
-    if st.session_state.batch_records:
-        if st.button("🗑️ Clear Batch Results"):
-            st.session_state.batch_records = []
-            st.rerun()
-            
-
-    if st.session_state.batch_records:
-        df_current = pd.DataFrame(st.session_state.batch_records)
-        st.dataframe(df_current, width="stretch", hide_index=True)
-        
-        # Compile and serve out the cumulative downloaded data
-        csv_data = df_current.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Aggregated Results as CSV",
-            data=csv_data,
-            file_name="batch_identification_results.csv",
-            mime="text/csv"
-        )
+                    # Live updates to the screen grid
+                    progress_bar.progress((idx + 1) / len(uploaded_files))
+                    df_current = pd.DataFrame(batch_output)
+                    status_table.dataframe(df_current, width="stretch", hide_index=True)
+                
+                # Generate downloadable artifact
+                csv_data = df_current.to_csv(index=False).encode('utf-8')
+                st.success("✅ Batch run completed successfully!")
+                
+                st.download_button(
+                    label="📥 Download Results as CSV",
+                    data=csv_data,
+                    file_name="batch_identification_results.csv",
+                    mime="text/csv"
+                )
