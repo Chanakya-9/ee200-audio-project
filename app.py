@@ -41,17 +41,21 @@ with tab1:
                     st.markdown(f"**{clean_name}**")
                     st.caption(f"{len(hashes):,} hashes")
                     
-                    fig = plt.figure(figsize=(2, 1.2))
+                    
+                    fig, ax = plt.subplots(figsize=(2, 1.2))
                     fig.patch.set_facecolor('none')
+                    ax.set_facecolor('none')
                     
                     if len(hashes) > 0:
                         t1_vals = [h[3] for h in hashes[:250]]
                         f1_vals = [h[0] for h in hashes[:250]]
-                        plt.scatter(t1_vals, f1_vals, s=0.2, c='#39d353', alpha=0.6)
                         
-                    plt.axis('off')
+                        ax.scatter(t1_vals, f1_vals, s=0.2, c='#39d353', alpha=0.6)
+                        
+                    ax.axis('off')
                     plt.tight_layout(pad=0)
                     st.pyplot(fig, use_container_width=True)
+                    plt.close(fig)
 
 with tab2:
     st.header("🎯 Identify a Sample Clip")
@@ -197,13 +201,14 @@ with tab3:
     uploaded_files = st.file_uploader("Upload multiple audio query clips at once", type=["mp3", "wav"], accept_multiple_files=True, key="batch_upload")
     
     if uploaded_files:
-        # Check if the upload quantity exceeds the 10-file safe limit
-        if len(uploaded_files) > 10:
-            st.error("⚠️ **Server Memory Protection:** Please upload a maximum of 10 files at a time to prevent the free cloud container from running out of RAM.")
-        else:
-            st.info(f"📋 Total clips loaded in queue: {len(uploaded_files)}")
+        st.info(f"📋 Total clips loaded in queue: {len(uploaded_files)}")
+        
+        if st.button("Process Batch Run"):
             
-            if st.button("Process Batch Run"):
+            if len(uploaded_files) > 30:
+                st.error("⚠️ **Server Memory Protection Active:** You have uploaded more than 30 files. To prevent the free cloud container from running out of RAM, please remove some files and ensure you process a maximum of 10 files at a time.")
+            else:
+                
                 import gc
                 import os
                 
@@ -214,7 +219,6 @@ with tab3:
                 for idx, f in enumerate(uploaded_files):
                     p = None
                     try:
-                        # Save the file temporarily to a secure string path
                         p = save_temp_file(f)
                         q_hashes, _, _, _ = back.extract_features(p)
                         
@@ -232,23 +236,21 @@ with tab3:
                             if predicted.lower().endswith(('.mp3', '.wav')):
                                 predicted = predicted[:-4]
                             
-                        batch_output.append({"Filename": f.name, "Prediction": predicted})
+                        clean_filename = os.path.splitext(f.name)[0]
+                        batch_output.append({"Filename": clean_filename, "Prediction": predicted})
                         
                     except Exception as e:
                         batch_output.append({"Filename": f.name, "Prediction": "Error"})
                         
                     finally:
-                        # Direct disk cleanup per file iteration
                         if p and os.path.exists(p):
                             os.remove(p)
                         gc.collect()
                     
-                    # Live updates to the screen grid
                     progress_bar.progress((idx + 1) / len(uploaded_files))
                     df_current = pd.DataFrame(batch_output)
                     status_table.dataframe(df_current, width="stretch", hide_index=True)
                 
-                # Generate downloadable artifact
                 csv_data = df_current.to_csv(index=False).encode('utf-8')
                 st.success("✅ Batch run completed successfully!")
                 
