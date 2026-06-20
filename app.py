@@ -194,70 +194,70 @@ with tab2:
 
 with tab3:
     st.header("Batch Query Identification")
-    uploaded_files = st.file_uploader("Upload multiple audio query clips at once", type=["mp3", "wav"], accept_multiple_files=True)
+    
+    # Restrict the maximum number of files allowed at once to protect RAM limits
+    uploaded_files = st.file_uploader(
+        "Upload multiple audio query clips at once (Max 5 files per batch)", 
+        type=["mp3", "wav"], 
+        accept_multiple_files=True,
+        key="batch_upload"
+    )
     
     if uploaded_files:
-        st.info(f"📋 Total clips loaded in queue: {len(uploaded_files)}")
         
-        if st.button("Process Batch Run"):
-            import gc
-            import io
+        if len(uploaded_files) > 5:
+            st.error("⚠️ **Server Memory Protection Active:** To prevent the free cloud server container from crashing out of RAM, please upload a maximum of 5 files at a time.")
+        else:
+            st.info(f"📋 Total clips loaded in queue: {len(uploaded_files)}")
             
-            
-            status_table = st.empty()
-            batch_output = []
-            
-            
-            progress_bar = st.progress(0)
-            
-            for idx, f in enumerate(uploaded_files):
-                try:
-                    
-                    audio_bytes = f.read()
-                    audio_stream = io.BytesIO(audio_bytes)
-                    
-                    
-                    q_hashes, _, _, _ = back.extract_features(audio_stream)
-                    
-                    b_votes = defaultdict(lambda: defaultdict(int))
-                    for q in q_hashes:
-                        matches = back.index.get((q[0], q[1], q[2]))
-                        if matches:
-                            for song, t_song in matches:
-                                offset = t_song - q[3]
-                                b_votes[song][offset] += 1
-                                
-                    predicted = "None"
-                    if b_votes:
-                        predicted = max(b_votes, key=lambda s: max(b_votes[s].values()))
-                        if predicted.lower().endswith(('.mp3', '.wav')):
-                            predicted = predicted[:-4]
+            if st.button("Process Batch Run"):
+                import gc
+                import os
+                
+                status_table = st.empty()
+                batch_output = []
+                progress_bar = st.progress(0)
+                
+                for idx, f in enumerate(uploaded_files):
+                    p = None
+                    try:
+                        p = save_temp_file(f)
+                        q_hashes, _, _, _ = back.extract_features(p)
                         
-                    batch_output.append({"Filename": f.name, "Prediction": predicted})
+                        b_votes = defaultdict(lambda: defaultdict(int))
+                        for q in q_hashes:
+                            matches = back.index.get((q[0], q[1], q[2]))
+                            if matches:
+                                for song, t_song in matches:
+                                    offset = t_song - q[3]
+                                    b_votes[song][offset] += 1
+                                    
+                        predicted = "None"
+                        if b_votes:
+                            predicted = max(b_votes, key=lambda s: max(b_votes[s].values()))
+                            if predicted.lower().endswith(('.mp3', '.wav')):
+                                    predicted = predicted[:-4]
+                            
+                        batch_output.append({"Filename": f.name, "Prediction": predicted})
+                        
+                    except Exception as e:
+                        batch_output.append({"Filename": f.name, "Prediction": "Error"})
+                        
+                    finally:
+                        if p and os.path.exists(p):
+                            os.remove(p)
+                        gc.collect()
                     
-                except Exception as e:
-                    batch_output.append({"Filename": f.name, "Prediction": f"Error: {str(e)[:30]}"})
-                    
-                finally:
-                    
-                    del audio_bytes
-                    del audio_stream
-                    gc.collect()
+                    progress_bar.progress((idx + 1) / len(uploaded_files))
+                    df_current = pd.DataFrame(batch_output)
+                    status_table.dataframe(df_current, width="stretch", hide_index=True)
                 
+                csv_data = df_current.to_csv(index=False).encode('utf-8')
+                st.success("✅ Batch run completed successfully!")
                 
-                progress_bar.progress((idx + 1) / len(uploaded_files))
-                df_current = pd.DataFrame(batch_output)
-                status_table.dataframe(df_current, width="stretch", hide_index=True)
-            
-            
-            csv_data = df_current.to_csv(index=False).encode('utf-8')
-            
-            st.success("✅ Batch run completed successfully!")
-            
-            
-            st.download_button(
-                label="📥 Download Results as CSV",
-                data=csv_data,
-                file_name="batch_identification_results.csv",
-                mime="text/csv"
-            )
+                st.download_button(
+                    label="📥 Download Results as CSV",
+                    data=csv_data,
+                    file_name="batch_identification_results.csv",
+                    mime="text/csv"
+                )
