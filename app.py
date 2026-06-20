@@ -197,13 +197,14 @@ with tab3:
     uploaded_files = st.file_uploader("Upload multiple audio query clips at once", type=["mp3", "wav"], accept_multiple_files=True, key="batch_upload")
     
     if uploaded_files:
-        # Check if the upload quantity exceeds the 10-file safe limit
-        if len(uploaded_files) > 10:
-            st.error("⚠️ **Server Memory Protection:** Please upload a maximum of 10 files at a time to prevent the free cloud container from running out of RAM.")
-        else:
-            st.info(f"📋 Total clips loaded in queue: {len(uploaded_files)}")
+        st.info(f"📋 Total clips loaded in queue: {len(uploaded_files)}")
+        
+        if st.button("Process Batch Run"):
             
-            if st.button("Process Batch Run"):
+            if len(uploaded_files) > 10:
+                st.error("⚠️ **Server Memory Protection Active:** You have uploaded more than 10 files. To prevent the free cloud container from running out of RAM, please remove some files and ensure you process a maximum of 10 files at a time.")
+            else:
+                
                 import gc
                 import os
                 
@@ -214,7 +215,6 @@ with tab3:
                 for idx, f in enumerate(uploaded_files):
                     p = None
                     try:
-                        # Save the file temporarily to a secure string path
                         p = save_temp_file(f)
                         q_hashes, _, _, _ = back.extract_features(p)
                         
@@ -238,17 +238,14 @@ with tab3:
                         batch_output.append({"Filename": f.name, "Prediction": "Error"})
                         
                     finally:
-                        # Direct disk cleanup per file iteration
                         if p and os.path.exists(p):
                             os.remove(p)
                         gc.collect()
                     
-                    # Live updates to the screen grid
                     progress_bar.progress((idx + 1) / len(uploaded_files))
                     df_current = pd.DataFrame(batch_output)
                     status_table.dataframe(df_current, width="stretch", hide_index=True)
                 
-                # Generate downloadable artifact
                 csv_data = df_current.to_csv(index=False).encode('utf-8')
                 st.success("✅ Batch run completed successfully!")
                 
